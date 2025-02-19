@@ -32,8 +32,6 @@ export async function GET(req: NextRequest) {
     const gameResponse = await axios.get(gameUrl);
     const gameData = gameResponse.data[appid]?.data;
 
-    console.log(gameData);
-
     if (!gameData) {
       return NextResponse.json(
         { error: 'ゲーム情報が見つかりません' },

@@ -78,17 +78,16 @@ client.on('messageCreate', async (message) => {
 
       message.reply({ embeds: [embed] });
     } else {
-      message.reply('ゲーム情報を取得できませんでした。');
+      message.reply('🚨 ゲーム情報を取得できませんでした。');
     }
   }
 });
 
 async function fetchSteamGameInfo(appId: string) {
   try {
-    const apiBaseUrl = process.env.API_URL || 'localhost:4000'; // GCP用のURLを環境変数で切り替え
+    const apiBaseUrl = 'localhost:4000'; // 外部から呼び出す場合は環境変数を設定する
     const url = `http://${apiBaseUrl}/api/steam?appid=${appId}`;
     const response = await axios.get(url);
-    console.log(response.data);
     return response.data;
   } catch (error) {
     console.error('🚨 Steam APIエラー:', error);

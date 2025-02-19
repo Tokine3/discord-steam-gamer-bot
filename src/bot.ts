@@ -85,7 +85,8 @@ client.on('messageCreate', async (message) => {
 
 async function fetchSteamGameInfo(appId: string) {
   try {
-    const url = `http://localhost:4000/api/steam?appid=${appId}`;
+    const apiBaseUrl = process.env.API_URL || 'localhost:4000'; // GCP用のURLを環境変数で切り替え
+    const url = `http://${apiBaseUrl}/api/steam?appid=${appId}`;
     const response = await axios.get(url);
     console.log(response.data);
     return response.data;

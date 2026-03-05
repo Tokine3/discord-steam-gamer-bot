@@ -201,8 +201,8 @@ async function startMailWatcher() {
               .setTitle("📩 メールが届いています")
               .setDescription(
                 bodyOver1000
-                  ? "dev@mcg-dec.jp宛のメールが届いています。\n※ 本文が1000文字を超えています。メールをご確認ください。"
-                  : "dev@mcg-dec.jp宛のメールが届いています。",
+                  ? "dev@mcg-dev.jp宛のメールが届いています。\n※ 本文が1000文字を超えています。メールをご確認ください。"
+                  : "dev@mcg-dev.jp宛のメールが届いています。",
               )
               .addFields({
                 name: "件名",

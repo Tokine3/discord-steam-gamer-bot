@@ -125,38 +125,61 @@ mailBot.login(process.env.MAIL_BOT_TOKEN!);
 // ===============================
 
 async function startMailWatcher() {
-  const imapClient = new ImapFlow({
-    host: "imap.zoho.jp",
-    port: 993,
-    secure: true,
-    auth: {
-      user: process.env.ZOHO_USER!,
-      pass: process.env.ZOHO_PASS!,
-    },
-    logger: false,
-  });
-
-  try {
-    await imapClient.connect();
-    console.log("📬 IMAP connected");
-  } catch (err) {
-    console.error("📩 IMAP接続失敗:", (err as Error).message);
-    return;
-  }
-
   const POLL_INTERVAL_MS = 60_000;
   const startTime = new Date();
   const notifiedUids = new Set<number>();
 
-  // 起動日の0時（IMAP の since は日付単位のため）
-  const sinceDate = new Date(startTime);
+  let sinceDate = new Date(startTime);
   sinceDate.setHours(0, 0, 0, 0);
+  let lastResetDay = sinceDate.getTime();
+
+  let imapClient: ImapFlow | null = null;
+
+  const createClient = () =>
+    new ImapFlow({
+      host: "imap.zoho.jp",
+      port: 993,
+      secure: true,
+      auth: {
+        user: process.env.ZOHO_USER!,
+        pass: process.env.ZOHO_PASS!,
+      },
+      logger: false,
+    });
+
+  const ensureConnected = async (): Promise<ImapFlow> => {
+    if (imapClient && imapClient.usable) return imapClient;
+    if (imapClient) {
+      try {
+        imapClient.close();
+      } catch {
+        /* noop */
+      }
+      imapClient = null;
+    }
+    const client = createClient();
+    await client.connect();
+    imapClient = client;
+    console.log("📬 IMAP connected");
+    return client;
+  };
 
   while (true) {
     try {
-      const lock = await imapClient.getMailboxLock("INBOX");
+      const client = await ensureConnected();
+
+      // 日付が変わったら notifiedUids をリセット（メモリリーク防止）
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      if (todayStart.getTime() !== lastResetDay) {
+        notifiedUids.clear();
+        sinceDate = todayStart;
+        lastResetDay = todayStart.getTime();
+      }
+
+      const lock = await client.getMailboxLock("INBOX");
       try {
-        const uids = await imapClient.search(
+        const uids = await client.search(
           { since: sinceDate },
           { uid: true },
         );
@@ -164,75 +187,79 @@ async function startMailWatcher() {
           ? uids.filter((uid) => !notifiedUids.has(uid))
           : [];
 
-        if (newUids.length === 0) continue;
+        if (newUids.length > 0) {
+          for await (const message of client.fetch(
+            newUids,
+            { envelope: true, source: true },
+            { uid: true },
+          )) {
+            if (!message.source) continue;
 
-        for await (const message of imapClient.fetch(
-          newUids,
-          { envelope: true, source: true },
-          { uid: true },
-        )) {
-          if (!message.source) continue;
+            // Bot起動前に受信したメールはスキップ
+            const receivedAt = message.envelope?.date;
+            if (!receivedAt || receivedAt < startTime) {
+              notifiedUids.add(message.uid);
+              continue;
+            }
 
-          // Bot起動前に受信したメールはスキップ
-          const receivedAt = message.envelope?.date;
-          if (!receivedAt || receivedAt < startTime) {
-            notifiedUids.add(message.uid);
-            continue;
-          }
+            try {
+              const parsed = (await simpleParser(
+                message.source,
+              )) as ParsedMail;
+              const toText = Array.isArray(parsed.to)
+                ? parsed.to.map((a) => a.text).join(",")
+                : (parsed.to?.text ?? "");
 
-          try {
-            const parsed = (await simpleParser(message.source)) as ParsedMail;
-            const toText = Array.isArray(parsed.to)
-              ? parsed.to.map((a) => a.text).join(",")
-              : (parsed.to?.text ?? "");
+              notifiedUids.add(message.uid);
 
-            notifiedUids.add(message.uid);
+              if (!toText.includes("dev@mcg-dev.jp")) continue;
 
-            if (!toText.includes("dev@mcg-dev.jp")) continue;
+              const channel = await mailBot.channels
+                .fetch(process.env.DISCORD_CHANNEL_ID!)
+                .catch(() => null);
+              if (!channel || !channel.isTextBased()) continue;
 
-            const channel = await mailBot.channels
-              .fetch(process.env.DISCORD_CHANNEL_ID!)
-              .catch(() => null);
-            if (!channel || !channel.isTextBased()) continue;
+              const bodyOver1000 = (parsed.text?.length ?? 0) > 1000;
+              const embed = new EmbedBuilder()
+                .setColor(0x00ff7f)
+                .setTitle("📩 メールが届いています")
+                .setDescription(
+                  bodyOver1000
+                    ? "dev@mcg-dev.jp宛のメールが届いています。\n※ 本文が1000文字を超えています。メールをご確認ください。"
+                    : "dev@mcg-dev.jp宛のメールが届いています。",
+                )
+                .addFields({
+                  name: "件名",
+                  value: parsed.subject || "(件名なし)",
+                  inline: false,
+                })
+                .addFields({
+                  name: "From",
+                  value: parsed.from?.text || "不明",
+                  inline: false,
+                })
+                .addFields({
+                  name: "本文",
+                  value: parsed.text
+                    ? parsed.text.slice(0, 1000)
+                    : "（本文なし）",
+                  inline: false,
+                })
+                .setTimestamp()
+                .setFooter({
+                  text: "白ヤギさん",
+                });
 
-            const bodyOver1000 = (parsed.text?.length ?? 0) > 1000;
-            const embed = new EmbedBuilder()
-              .setColor(0x00ff7f)
-              .setTitle("📩 メールが届いています")
-              .setDescription(
-                bodyOver1000
-                  ? "dev@mcg-dev.jp宛のメールが届いています。\n※ 本文が1000文字を超えています。メールをご確認ください。"
-                  : "dev@mcg-dev.jp宛のメールが届いています。",
-              )
-              .addFields({
-                name: "件名",
-                value: parsed.subject || "(件名なし)",
-                inline: false,
-              })
-              .addFields({
-                name: "From",
-                value: parsed.from?.text || "不明",
-                inline: false,
-              })
-              .addFields({
-                name: "本文",
-                value: parsed.text
-                  ? parsed.text.slice(0, 1000)
-                  : "（本文なし）",
-                inline: false,
-              })
-              .setTimestamp()
-              .setFooter({
-                text: "白ヤギさん",
+              await (channel as unknown as TextChannel).send({
+                embeds: [embed],
               });
-
-            await (channel as unknown as TextChannel).send({ embeds: [embed] });
-            // console.log(`📩 通知送信: "${parsed.subject}"`);
-          } catch (msgErr) {
-            console.error(
-              "⚠️ メッセージ処理エラー:",
-              (msgErr as Error).message,
-            );
+              // console.log(`📩 通知送信: "${parsed.subject}"`);
+            } catch (msgErr) {
+              console.error(
+                "⚠️ メッセージ処理エラー:",
+                (msgErr as Error).message,
+              );
+            }
           }
         }
       } finally {
@@ -240,6 +267,15 @@ async function startMailWatcher() {
       }
     } catch (err) {
       console.error("📩 ポーリングエラー:", (err as Error).message);
+      // 次回ループで再接続させる
+      if (imapClient) {
+        try {
+          imapClient.close();
+        } catch {
+          /* noop */
+        }
+        imapClient = null;
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));

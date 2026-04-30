@@ -179,15 +179,15 @@ async function startMailWatcher() {
 
       const lock = await client.getMailboxLock("INBOX");
       try {
-        const uids = await client.search(
-          { since: sinceDate },
-          { uid: true },
-        );
+        const uids = await client.search({ since: sinceDate }, { uid: true });
         const newUids = Array.isArray(uids)
           ? uids.filter((uid) => !notifiedUids.has(uid))
           : [];
 
         if (newUids.length > 0) {
+          console.log(
+            `📨 新着候補: ${newUids.length}件 (uid=${newUids.join(",")})`,
+          );
           for await (const message of client.fetch(
             newUids,
             { envelope: true, source: true },
@@ -203,16 +203,23 @@ async function startMailWatcher() {
             }
 
             try {
-              const parsed = (await simpleParser(
-                message.source,
-              )) as ParsedMail;
+              const parsed = (await simpleParser(message.source)) as ParsedMail;
               const toText = Array.isArray(parsed.to)
                 ? parsed.to.map((a) => a.text).join(",")
                 : (parsed.to?.text ?? "");
 
+              console.log(
+                `📬 メール解析: uid=${message.uid}, subject="${parsed.subject}", to="${toText}"`,
+              );
+
               notifiedUids.add(message.uid);
 
-              if (!toText.includes("dev@mcg-dev.jp")) continue;
+              if (!toText.includes("dev@mcg-dev.jp")) {
+                console.log(
+                  `⏭️ 宛先フィルタでスキップ: uid=${message.uid} (toに dev@mcg-dev.jp を含まない)`,
+                );
+                continue;
+              }
 
               const channel = await mailBot.channels
                 .fetch(process.env.DISCORD_CHANNEL_ID!)

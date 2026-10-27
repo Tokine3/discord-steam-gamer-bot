@@ -4,8 +4,8 @@ import {
   GatewayIntentBits,
   TextChannel,
 } from "discord.js";
-import axios from "axios";
 import dotenv from "dotenv";
+import { fetchSteamGameInfo } from "./steam";
 
 dotenv.config();
 
@@ -92,18 +92,6 @@ client.on("messageCreate", async (message) => {
     }
   }
 });
-
-async function fetchSteamGameInfo(appId: string) {
-  try {
-    const apiBaseUrl = "localhost:4000"; // 外部から呼び出す場合は環境変数を設定する
-    const url = `http://${apiBaseUrl}/api/steam?appid=${appId}`;
-    const response = await axios.get(url);
-    return response.data;
-  } catch (error) {
-    console.error("🚨 Steam APIエラー:", error);
-    return null;
-  }
-}
 
 client.login(DISCORD_TOKEN);
 

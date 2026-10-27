@@ -5,14 +5,13 @@ Discord に投稿された Steam ストアの URL を検知して、ゲーム情
 
 ## 構成
 
-pm2 で 2 プロセスを動かす(`ecosystem.config.js`)。
+pm2 で 1 プロセス `discord-bot`(`pnpm start` → `tsx src/bot.ts`)を動かす(`ecosystem.config.js`)。
+ビルドは不要で、TypeScript を tsx でそのまま実行する。
 
-| pm2 名 | コマンド | 内容 |
-|---|---|---|
-| `discord-bot` | `pnpm start:bot`(`tsx src/bot.ts`) | Steam URL 検知 Bot とメール通知 Bot |
-| `next-api` | `pnpm start:api`(`next start -p 4000`) | ゲーム情報 API `GET /api/steam?appid=<AppID>` |
-
-`discord-bot` は `http://localhost:4000/api/steam` を呼ぶため、`next-api` も同じ VM で動いている必要がある。
+| ファイル | 内容 |
+|---|---|
+| `src/bot.ts` | Steam URL 検知 Bot とメール通知 Bot |
+| `src/steam.ts` | Steam からゲーム情報とレビューを取得する `fetchSteamGameInfo` |
 
 使っている外部 API:
 
@@ -37,9 +36,11 @@ pm2 で 2 プロセスを動かす(`ecosystem.config.js`)。
 
 ```bash
 pnpm install
-pnpm dev          # API を http://localhost:4000 で起動
-pnpm start:bot    # 別ターミナルで Bot を起動
+pnpm dev          # ファイル変更を監視して Bot を再起動する(tsx watch)
+pnpm typecheck    # 型チェック
 ```
+
+ローカルで起動すると本番と同じトークンでログインするため、VM の Bot と二重に返信する点に注意。
 
 ## GCP VM での運用
 
@@ -60,10 +61,8 @@ pm2 list                            # online か、再起動回数(↺)、メモ
 pm2 show discord-bot                # 詳細(起動時刻、ログファイルのパス)
 pm2 logs                            # 全プロセスのログを流し続ける(Ctrl+C で抜ける)
 pm2 logs discord-bot --lines 200    # 直近 200 行から表示
-pm2 logs next-api --err --lines 50  # エラーログだけ表示
+pm2 logs discord-bot --err          # エラーログだけ表示
 pm2 monit                           # CPU・メモリをリアルタイム表示
-
-curl -i 'http://localhost:4000/api/steam?appid=730'   # API の疎通確認
 ```
 
 `↺` が増え続けているときは、クラッシュループを疑ってエラーログを見る。
@@ -74,8 +73,7 @@ curl -i 'http://localhost:4000/api/steam?appid=730'   # API の疎通確認
 cd ~/discord-steam-gamer-bot
 
 pm2 start ecosystem.config.js       # 初回起動(pm2 list に何も出ないとき)
-pm2 restart ecosystem.config.js     # 両方まとめて再起動
-pm2 restart discord-bot             # Bot だけ再起動
+pm2 restart ecosystem.config.js     # 再起動
 pm2 stop ecosystem.config.js        # 停止
 pm2 delete ecosystem.config.js      # pm2 の管理から外す
 ```
@@ -88,10 +86,11 @@ pm2 delete ecosystem.config.js      # pm2 の管理から外す
 cd ~/discord-steam-gamer-bot
 git pull
 pnpm install                        # 依存が変わったとき
-pnpm build                          # next-api は .next のビルド成果物を使うため、API を変えたら必須
 pm2 restart ecosystem.config.js
 pm2 logs --lines 50                 # 起動ログを確認し、Discord に Steam の URL を投稿して動作確認
 ```
+
+ビルドは不要。
 
 `.env` を変えたときも `pm2 restart` が必要。
 

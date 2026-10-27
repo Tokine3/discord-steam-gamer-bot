@@ -3,15 +3,7 @@ module.exports = {
     {
       name: 'discord-bot',
       script: 'pnpm',
-      args: 'start:bot',
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '1G',
-    },
-    {
-      name: 'next-api',
-      script: 'pnpm',
-      args: 'start:api',
+      args: 'start',
       autorestart: true,
       watch: false,
       max_memory_restart: '1G',

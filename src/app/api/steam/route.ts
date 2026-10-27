@@ -39,23 +39,39 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Steamのレビュー情報を取得
-    const reviewUrl = `https://store.steampowered.com/appreviews/${appid}?json=1&start_offset=0&language=all&purchase_type=all&filter=all`;
-    const reviewResponse = await axios.get(reviewUrl);
-    const reviewData = reviewResponse.data;
+    // Steamのレビュー情報を取得（失敗してもゲーム情報は返す）
+    // 旧 /appreviews は 2026-10-22 に廃止されたため IUserReviewsService/GetAppReviews を使う
+    const reviewUrl =
+      'https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/';
+    const reviewSummary = await axios
+      .get(reviewUrl, {
+        params: {
+          input_json: JSON.stringify({
+            appid: Number(appid),
+            languages: ['all'],
+            purchase_type: 1, // k_EUserReviewsPurchaseType_All
+            num_per_page: 1,
+          }),
+        },
+      })
+      .then((res) => res.data?.response?.query_summary)
+      .catch((error) => {
+        console.warn('⚠️ Steamレビュー取得失敗:', error.message);
+        return undefined;
+      });
 
     // 取得した英語のレビュー評価を日本語に変換
-    const allReviewEng: string =
-      reviewData.query_summary.review_score_desc || 'No user reviews';
+    const allReviewEng: string | undefined = reviewSummary?.review_score_desc;
 
     const isExistPriceOverview: boolean = !!gameData.price_overview;
 
     return NextResponse.json({
       name: gameData.name,
-      release_date: gameData.release_date.date || '不明',
-      genres: gameData.genres
-        .map((g: { id: string; description: string }) => g.description)
-        .join(', '),
+      release_date: gameData.release_date?.date || '不明',
+      genres:
+        gameData.genres
+          ?.map((g: { id: string; description: string }) => g.description)
+          .join(', ') || '不明',
       is_free: gameData.is_free,
       initial_price: isExistPriceOverview
         ? gameData.price_overview.initial / 100
@@ -68,8 +84,8 @@ export async function GET(req: NextRequest) {
         : 0,
       url: `https://store.steampowered.com/app/${appid}`,
       description: gameData.short_description,
-      all_reviews: reviewTranslations[allReviewEng] || '不明',
-      all_reviews_count: reviewData.query_summary.total_reviews || 0,
+      all_reviews: (allReviewEng && reviewTranslations[allReviewEng]) || '不明',
+      all_reviews_count: reviewSummary?.total_reviews || 0,
       thumbnail: gameData.header_image,
     });
   } catch (error) {

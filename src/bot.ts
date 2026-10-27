@@ -22,6 +22,11 @@ client.once("ready", () => {
   console.log(`✅ Bot is online! Logged in as ${client.user?.tag}`);
 });
 
+// ハンドラ内の例外でプロセスごと落ちないようにする（メールBOTも同居しているため）
+client.on("error", (error) => {
+  console.error("🚨 Discordクライアントエラー:", error);
+});
+
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
@@ -33,15 +38,15 @@ client.on("messageCreate", async (message) => {
     console.log(`🎮 Steam URL detected: AppID=${appId}`);
     const gameInfo = await fetchSteamGameInfo(appId);
 
-    const isDiscount =
-      gameInfo.final_price !== 0 &&
-      gameInfo.initial_price !== 0 &&
-      gameInfo.discount_percent !== 0 &&
-      gameInfo.final_price !== gameInfo.initial_price;
-
-    const isPriceUndecide = !gameInfo.is_free && gameInfo.final_price === 0;
-
     if (gameInfo) {
+      const isDiscount =
+        gameInfo.final_price !== 0 &&
+        gameInfo.initial_price !== 0 &&
+        gameInfo.discount_percent !== 0 &&
+        gameInfo.final_price !== gameInfo.initial_price;
+
+      const isPriceUndecide = !gameInfo.is_free && gameInfo.final_price === 0;
+
       const embed = new EmbedBuilder()
         .setColor(0x0099ff)
         .setTitle(gameInfo.name)
